@@ -47,8 +47,10 @@ jobs:
             mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
             cp -a "$ANDROID_HOME/cmdline-tools/." "$ANDROID_HOME/cmdline-tools/latest/"
           fi
+          set +o pipefail
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          set -o pipefail
 
       - name: Install dependencies
         run: npm ci

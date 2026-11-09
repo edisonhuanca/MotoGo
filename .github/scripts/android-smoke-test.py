@@ -23,7 +23,7 @@ def wait_for_text(text):
         xml = adb("shell", "cat", "/sdcard/motogo-ui.xml")
         (OUT / "ui.xml").write_text(xml)
         root = ET.fromstring(xml)
-        if any(text in node.get("text", "") for node in root.iter()):
+        if any(text in (node.get("text", "") or node.get("content-desc", "")) for node in root.iter()):
             return root
     raise AssertionError(f"UI did not display: {text}")
 
@@ -37,7 +37,7 @@ try:
     root = wait_for_text("Mapa no disponible")
     # Exercise navigation after JS has loaded, including remounting the map area.
     for tab, expected in [("Conductor", "Tus viajes"), ("Pasajero", "Mapa no disponible")]:
-        node = next(n for n in root.iter() if n.get("text") == tab)
+        node = next(n for n in root.iter() if (n.get("text") or n.get("content-desc")) == tab)
         x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.attrib["bounds"]))
         adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
         root = wait_for_text(expected)

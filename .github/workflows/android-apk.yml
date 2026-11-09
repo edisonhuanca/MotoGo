@@ -19,6 +19,10 @@ jobs:
     timeout-minutes: 45
     env:
       CI: '1'
+      EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+      EXPO_PUBLIC_AUTH_GOOGLE_ENABLED: ${{ vars.EXPO_PUBLIC_AUTH_GOOGLE_ENABLED }}
+      EXPO_PUBLIC_AUTH_FACEBOOK_ENABLED: ${{ vars.EXPO_PUBLIC_AUTH_FACEBOOK_ENABLED }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,6 +50,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check authentication security and TypeScript
+        run: npm test && npx tsc --noEmit
 
       - name: Generate Android project
         run: npx expo prebuild --platform android

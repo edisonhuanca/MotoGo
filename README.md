@@ -28,6 +28,15 @@ días. No es una firma de producción: para instalar un APK de otra ejecución
 puede ser necesario desinstalar el anterior, eliminando sus datos locales.
 Los mapas y otros servicios de red siguen necesitando internet.
 
+El APK de pruebas abre sin Google Maps cuando no hay una clave configurada,
+para evitar un cierre nativo al iniciar. Se pueden elegir origen y destino y
+simular viajes igualmente. Para habilitar el mapa Android, configura
+`GOOGLE_MAPS_API_KEY` en el entorno de compilación con una clave válida de
+Maps SDK for Android, restringida al paquete y al certificado correspondientes.
+`app.config.js` configura juntos el manifiesto y la disponibilidad del mapa.
+Actions también instala y abre el APK en un emulador de tablet Android sin
+Metro, comprueba la pantalla inicial y navega entre Pasajero y Conductor.
+
 ## Incluye
 - Interfaz de pasajero con mapa, lugares de ejemplo de Chimbote, origen/destino y tarifa ilustrativa.
 - Interfaz de conductor con simulación de aceptación, inicio y fin de viajes.

@@ -1,4 +1,4 @@
-name: Android Debug APK
+name: Android Standalone Test APK
 
 on:
   push:
@@ -14,11 +14,11 @@ permissions:
 
 jobs:
   build:
-    name: Build debug APK
+    name: Build standalone test APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      CI: '1'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -35,37 +35,68 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK command line tools
-        shell: bash
-        run: |
-          set -euxo pipefail
-          mkdir -p "$ANDROID_HOME"
-          if [ ! -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            wget -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" -O /tmp/cmdline-tools.zip
-            unzip -qo /tmp/cmdline-tools.zip -d "$ANDROID_HOME"
-            rm -f /tmp/cmdline-tools.zip
-            mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
-            cp -a "$ANDROID_HOME/cmdline-tools/." "$ANDROID_HOME/cmdline-tools/latest/"
-          fi
-          set +o pipefail
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-          set -o pipefail
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0"
 
       - name: Install dependencies
         run: npm ci
 
       - name: Generate Android project
-        run: npx expo prebuild --platform android --non-interactive
+        run: npx expo prebuild --platform android
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug
+      # Expo's generated release build uses signingConfigs.debug. Replace the
+      # template keystore with a fresh, valid key intended only for test installs.
+      - name: Generate test signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'signingConfig signingConfigs.debug' android/app/build.gradle
+          rm -f android/app/debug.keystore
+          keytool -genkeypair -noprompt -storetype JKS \
+            -keystore android/app/debug.keystore \
+            -storepass android -keypass android -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=MotoGo Test, OU=Testing, O=MotoGo, C=PE"
+
+      # Release invokes Expo's export:embed task and disables the Metro dev host.
+      - name: Build standalone APK
         working-directory: android
+        run: ./gradlew :app:assembleRelease --no-daemon --console=plain
 
-      - name: Upload debug APK
+      - name: Verify packaged bundle, manifest and test signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          mkdir -p artifacts
+          python3 - "$APK" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              bundle = apk.read("assets/index.android.bundle")
+              assert len(bundle) > 0, "JavaScript bundle is empty"
+              print(f"Embedded JavaScript/Hermes bundle: {len(bundle)} bytes")
+              assert any(n.startswith("lib/arm64-v8a/") for n in apk.namelist()), "Missing arm64 native libraries"
+          PY
+          "$TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee artifacts/signature.txt
+          keytool -exportcert -keystore android/app/debug.keystore \
+            -storepass android -alias androiddebugkey -file /tmp/motogo-test.der
+          EXPECTED=$(sha256sum /tmp/motogo-test.der | cut -d ' ' -f 1)
+          grep -qi "Signer #1 certificate SHA-256 digest: $EXPECTED" artifacts/signature.txt
+          "$TOOLS/zipalign" -c -P 16 -v 4 "$APK" > artifacts/alignment.txt
+          apkanalyzer manifest print "$APK" > artifacts/AndroidManifest.xml
+          test "$(apkanalyzer manifest debuggable "$APK")" = false
+          test "$(apkanalyzer manifest application-id "$APK")" = pe.motogo.chimbote
+          cp "$APK" artifacts/MotoGo-android-standalone-test.apk
+          (cd artifacts && sha256sum MotoGo-android-standalone-test.apk > SHA256SUMS)
+
+      - name: Upload verified standalone APK
         uses: actions/upload-artifact@v4
         with:
-          name: MotoGo-android-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: MotoGo-android-standalone-test
+          path: artifacts/
           if-no-files-found: error
           retention-days: 14
